@@ -1,0 +1,47 @@
+{
+  "summary": "Vaanix backend + frontend tested end-to-end. Backend: 19/19 pytest tests pass after a one-line test assertion fix (server lowercases email on register). Frontend: Welcome → Login → Chats → New chat → 1-1 chat → send text → Settings + dark toggle all work. Found and fixed a critical React rules-of-hooks violation in src/lib/theme.tsx that was throwing on every render before fix.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "src/lib/theme.tsx ThemeProvider", "issue": "useCallbackSet hook called inside useMemo factory — violates Rules of Hooks; logged ERROR on every ThemeProvider render. Fixed by lifting useCallback to top level of ThemeProvider.", "testID": "n/a", "priority": "HIGH"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "welcome", "issues": ["Sign in / Create new account buttons have no testID (welcome-signin, welcome-register would help future automated tests)"]},
+      {"screen": "chat/[id]", "issues": ["send-btn testID only renders when input is non-empty (mic shows when empty). Spec lists send-btn — it works but is conditional. Consider always rendering send-btn (disabled) for predictable testing."]}
+    ],
+    "react_native_issues": [
+      {"component": "global", "issue": "expo-av deprecation warning (SDK 54). Migrate to expo-audio/expo-video before next SDK bump."},
+      {"component": "multiple", "issue": "shadow* style props deprecated; switch to boxShadow."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vaanix_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: add testIDs to welcome screen buttons (welcome-signin, welcome-register) for stable Playwright runs.",
+    "Optional: render send-btn always (disabled when input empty) so tests can locate it before typing.",
+    "Plan migration off expo-av and shadow* props before Expo SDK 54."
+  ],
+  "critical_code_review_comments": [
+    "theme.tsx had a Rules-of-Hooks violation (fixed). Audit other providers for similar mistakes.",
+    "server.py is 819 lines — consider splitting auth, users, conversations, ws into separate routers if it grows further (not blocking)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_vaanix_api.py (new)",
+    "/app/backend/tests/conftest.py (new)",
+    "/app/backend/tests/__init__.py (new)",
+    "/app/frontend/src/lib/theme.tsx (fixed Rules of Hooks)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Created several TEST_-prefixed users via register/forgot-password tests; safe to leave (prefixed for cleanup).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend env uses EXPO_PUBLIC_BACKEND_URL (not EXPO_BACKEND_URL). Backend WS at wss://.../api/ws?token=<jwt>. Demo creds: admin@vaanix.app/admin123, aarav@vaanix.app/demo1234, meera@vaanix.app/demo1234. Run pytest with `cd /app && python -m pytest backend/tests/test_vaanix_api.py -v`.",
+  "rca_of_issue": "theme.tsx:68 invoked the custom hook `useCallbackSet(setMode)` from inside the `useMemo` factory function. React's Rules of Hooks forbids calling hooks from non-top-level positions (callbacks, useMemo factories, useEffect, etc.). The fix is to call useCallback at the top of ThemeProvider and reference the resulting stable function inside useMemo's value object."
+}

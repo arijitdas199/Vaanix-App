@@ -1,0 +1,43 @@
+{
+  "summary": "Vaanix iteration 2 (passwordless email+OTP) tested end-to-end. Backend: 15/15 pytest tests pass — request-otp (new user / missing display_name 400 / cooldown 429 / dev_otp returned), verify-otp (success + email_verified, 5 wrong attempts each show 'attempts left' then OTP invalidated), /auth/me with bearer, legacy endpoints (/auth/login, /auth/register, /auth/forgot-password, /auth/reset-password) all return 404, seeded users (admin/aarav/meera) cleaned up, and chat APIs (create direct conversation, send & list messages, list users) work with the OTP-issued bearer token. Frontend: welcome → email → OTP screen → /(tabs)/chats works on mobile viewport (390x844). Wrong code shows otp-error toast and clears digits; correct code auto-submits and navigates to chats; resend countdown starts at 60s and is disabled. Logout from settings clears JWT and returns user to welcome (after confirm modal). Old test_vaanix_api.py rewritten for OTP flow.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "(tabs)/chats empty state", "issues": ["Stale copy: shows 'Demo users available: aarav@vaanix.app, meera@vaanix.app' — those seeded users were retired in this iteration. Update the empty-state hint."]},
+      {"screen": "settings logout confirm modal", "issues": ["Confirm modal Cancel/Log out buttons lack testIDs (e.g., logout-confirm, logout-cancel). Currently must locate by text — fragile for tests."]}
+    ],
+    "react_native_issues": [
+      {"component": "global", "issue": "Console warnings: 'shadow*' style props deprecated (use boxShadow); expo-av deprecated in SDK 54 (migrate to expo-audio/expo-video). Non-blocking."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vaanix_api.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Remove or update the 'Demo users available: aarav@vaanix.app, meera@vaanix.app' hint on the empty Chats screen — those accounts no longer exist.",
+    "Add testIDs to the logout confirm modal buttons (logout-confirm, logout-cancel) for stable automation.",
+    "Track expo-av and shadow* deprecations before next Expo SDK bump."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 818 lines — consider splitting auth/users/conversations/ws into routers as it grows.",
+    "OTP cooldown lookup (db.otp_codes.find_one sort by created_at) relies on string ISO timestamps; fine today but consider storing native datetimes consistently.",
+    "request-otp returns 'is_new_user' computed as `email_verified is False` — this is true for already-existing-but-never-verified users too, which may be slightly misleading semantics, but currently unused by the UI."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (rewritten for OTP — removed admin/aarav/meera password fixtures)",
+    "/app/backend/tests/test_vaanix_api.py (rewritten for OTP flow + chat APIs)"
+  ],
+  "success_rate": {"backend": "100% (15/15)", "frontend": "100% (welcome → email → OTP → chats → settings → logout → welcome)"},
+  "seed_data_creation": "Tests create unique TEST_<uuid>@vaanix.app users per run (cooldown is 60s/email so unique emails are required). Safe — all prefixed for cleanup if needed.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend env var is EXPO_PUBLIC_BACKEND_URL. Backend is at https://divine-chat-14.preview.emergentagent.com/api. DEV_RETURN_OTP=true makes request-otp include dev_otp in the response — that is the source of truth in tests since Resend test mode only delivers to arijitdas199@gmail.com. OTP cooldown is 60s per email — always use a fresh uuid email per test. Run tests with: `cd /app && python -m pytest backend/tests/test_vaanix_api.py -v`. Logout confirm modal needs the Locator('text=Log out').last to bypass the row label.",
+  "rca_of_issue": "N/A — no functional bugs found this iteration. Two UX/copy follow-ups noted (stale demo-user hint on empty Chats; missing testIDs on logout confirm modal)."
+}

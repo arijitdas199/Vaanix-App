@@ -1,0 +1,160 @@
+{
+  "project_name": "Vaanix",
+  "tagline": "Connect Beyond Words",
+  "theme": "Jewel & Luxury / Soft Premium",
+  "archetype": "5 (Jewel & Luxury blended with Mobile Soft UI)",
+  "instructions_to_main_agent": [
+    "Follow this blueprint strictly for an Expo React Native environment.",
+    "Never use generic fonts like Inter, Roboto, or Open Sans. Use Outfit for headings and Manrope for body text.",
+    "Implement Material Design 3 spacing and interactions with a premium twist (extra breathing room, soft drop shadows instead of harsh elevation).",
+    "Use the exact Indigo/Violet color hex codes provided for both Light and Dark modes. The gradient should be applied seamlessly.",
+    "Chat bubbles must use asymmetric border-radii for directional indication (e.g., 24px on 3 corners, 4px on the tail corner).",
+    "For avatars and missing user info, use the provided placeholder media URLs. Do not leave blank or text-only if media is intended.",
+    "Every key interaction must use smooth animations, like react-native-reanimated for spring-based bottom sheets and chat bubble pop-ins.",
+    "All interactive UI components MUST have 'testID' matching their function (e.g., testID='chat-list-item-0' since it is React Native, use testID instead of data-testid).",
+    "Expo Navigation: Use @react-navigation/bottom-tabs for the primary navigation."
+  ],
+  "typography": {
+    "font_family": {
+      "heading": "Outfit, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "Space Mono, monospace"
+    },
+    "hierarchy": {
+      "h1_hero": { "size": "36px", "weight": "800", "letter_spacing": "-1.5px", "line_height": "1.1" },
+      "h2_section": { "size": "28px", "weight": "700", "letter_spacing": "-1px", "line_height": "1.2" },
+      "h3_title": { "size": "22px", "weight": "600", "letter_spacing": "-0.5px", "line_height": "1.3" },
+      "body_large": { "size": "18px", "weight": "500", "letter_spacing": "0px", "line_height": "1.5" },
+      "body_base": { "size": "16px", "weight": "400", "letter_spacing": "0.1px", "line_height": "1.5" },
+      "body_small": { "size": "14px", "weight": "400", "letter_spacing": "0.2px", "line_height": "1.4" },
+      "caption": { "size": "12px", "weight": "500", "letter_spacing": "0.5px", "line_height": "1.3", "text_transform": "uppercase" }
+    }
+  },
+  "colors": {
+    "light_mode": {
+      "background": "#F8F9FC",
+      "surface": "#FFFFFF",
+      "surface_variant": "#F1F5F9",
+      "primary": "#4F46E5",
+      "secondary": "#8B5CF6",
+      "primary_gradient": "linear-gradient(135deg, #4F46E5 0%, #8B5CF6 100%)",
+      "text_primary": "#0F172A",
+      "text_secondary": "#64748B",
+      "text_tertiary": "#94A3B8",
+      "border": "#E2E8F0",
+      "success": "#10B981",
+      "error": "#EF4444",
+      "warning": "#F59E0B",
+      "bubble_sent": "#4F46E5",
+      "bubble_received": "#F1F5F9",
+      "bubble_text_sent": "#FFFFFF",
+      "bubble_text_received": "#0F172A"
+    },
+    "dark_mode": {
+      "background": "#0A0B10",
+      "surface": "#12141D",
+      "surface_variant": "#1E202B",
+      "primary": "#6366F1",
+      "secondary": "#A78BFA",
+      "primary_gradient": "linear-gradient(135deg, #6366F1 0%, #A78BFA 100%)",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#94A3B8",
+      "text_tertiary": "#64748B",
+      "border": "#272A37",
+      "success": "#34D399",
+      "error": "#F87171",
+      "warning": "#FBBF24",
+      "bubble_sent": "#6366F1",
+      "bubble_received": "#1E202B",
+      "bubble_text_sent": "#FFFFFF",
+      "bubble_text_received": "#F8FAFC"
+    }
+  },
+  "layout_and_spacing": {
+    "container_padding": "24px",
+    "list_item_padding": "16px",
+    "chat_bubble_padding": "12px 16px",
+    "gap_xs": "4px",
+    "gap_sm": "8px",
+    "gap_md": "16px",
+    "gap_lg": "24px",
+    "gap_xl": "32px",
+    "border_radius": {
+      "sm": "8px",
+      "md": "12px",
+      "lg": "16px",
+      "xl": "24px",
+      "full": "9999px"
+    },
+    "chat_bubble_radius": {
+      "sent": { "topLeft": 24, "topRight": 24, "bottomLeft": 24, "bottomRight": 4 },
+      "received": { "topLeft": 24, "topRight": 24, "bottomRight": 24, "bottomLeft": 4 }
+    }
+  },
+  "components": {
+    "bottom_tabs": {
+      "style": "Floating or borderless with indicator pill",
+      "height": "80px",
+      "icon_size": "24px",
+      "active_tint": "primary_gradient",
+      "inactive_tint": "text_tertiary"
+    },
+    "fab_new_chat": {
+      "position": "bottom-right",
+      "size": "56px",
+      "background": "primary_gradient",
+      "shadow": "0px 8px 32px rgba(79, 70, 229, 0.4)",
+      "icon": "plus"
+    },
+    "chat_list_item": {
+      "avatar_size": "52px",
+      "unread_badge_size": "20px",
+      "unread_badge_bg": "secondary",
+      "online_indicator": "12px, border: 2px solid surface, bg: success"
+    },
+    "text_input": {
+      "height": "48px",
+      "bg": "surface_variant",
+      "radius": "24px",
+      "padding": "0 16px"
+    }
+  },
+  "motion": {
+    "screen_transition": "Slide from right with slight scale-up (fade + scale).",
+    "chat_bubble_enter": "Spring animation: initial scale 0.8, opacity 0 -> final scale 1.0, opacity 1, damping 15.",
+    "fab_press": "Scale down to 0.9 on press-in, spring back to 1.0 on release.",
+    "list_stagger": "Staggered slide-up for chat lists during initial load (50ms delay per item)."
+  },
+  "media_urls": [
+    {
+      "category": "onboarding_screen_1",
+      "description": "Abstract 3D illustration of networking nodes, use for 'Connect Beyond Words' screen.",
+      "url": "https://static.prod-images.emergentagent.com/jobs/e14f9429-60ef-4aba-b004-7f450f3decb4/images/9611a38242e8e9e7a823a249442209fa0255cec70cae588645efac2171d269a6.png"
+    },
+    {
+      "category": "onboarding_screen_2",
+      "description": "Swift comet/light streak, use for 'Lightning Fast Messaging' screen.",
+      "url": "https://static.prod-images.emergentagent.com/jobs/e14f9429-60ef-4aba-b004-7f450f3decb4/images/33ee2d77544b7df82619caa77d75c12dd4ee6c1ee73253016f7e43f9980a5c96.png"
+    },
+    {
+      "category": "empty_state_chat",
+      "description": "Floating frosted glass paper airplane, use when no active chats or no messages in conversation.",
+      "url": "https://static.prod-images.emergentagent.com/jobs/e14f9429-60ef-4aba-b004-7f450f3decb4/images/5a3759bcd95956d9b315ef06d9482a3f4583bcecb6a05ddb121ea3d172e652e8.png"
+    },
+    {
+      "category": "user_avatar_1",
+      "description": "Professional user avatar for chat list.",
+      "url": "https://images.unsplash.com/photo-1520341280432-4749d4d7bcf9?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHw0fHxwb3J0cmFpdCUyMGF2YXRhciUyMHNtaWxpbmclMjBwcm9mZXNzaW9uYWx8ZW58MHx8fHwxNzc3MjE2ODc2fDA&ixlib=rb-4.1.0&q=85"
+    },
+    {
+      "category": "user_avatar_2",
+      "description": "Professional user avatar for group chat participant.",
+      "url": "https://images.unsplash.com/photo-1512484776495-a09d92e87c3b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzl8MHwxfHNlYXJjaHwzfHxwb3J0cmFpdCUyMGF2YXRhciUyMHNtaWxpbmclMjBwcm9mZXNzaW9uYWx8ZW58MHx8fHwxNzc3MjE2ODc2fDA&ixlib=rb-4.1.0&q=85"
+    },
+    {
+      "category": "user_avatar_3",
+      "description": "Professional user avatar for caller list.",
+      "url": "https://images.pexels.com/photos/3778602/pexels-photo-3778602.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"
+    }
+  ]
+}
