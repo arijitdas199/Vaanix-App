@@ -1,0 +1,44 @@
+{
+  "summary": "Vaanix end-to-end verification after fresh GitHub import. Backend: 35/35 pytest tests pass — 15 baseline (root, request-otp new/cooldown/no-name, verify-otp success/wrong-attempts/lockout, /auth/me, legacy 404s, seeded cleanup, direct-conv send/list, users list) + 20 new extended (auth/refresh + invalid token, profile update, user search ?q=, block/unblock/blocked-list, group create + admin assignment, group-without-name 400, conversations list+get, mute/unmute, participants add/remove admin-only enforcement (403 for non-admin / 200 for admin), image base64 message, pagination via before+limit, read-receipt persistence on second list, react toggle/replace/remove, star/unstar + /messages/starred, delete-for-me hidden only for self, delete-for-all sender-only enforcement, /messages/search?q=, WebSocket /api/ws ping/pong + typing broadcast between two users, WebSocket invalid-token 4401). Frontend smoke (mobile 390x844): Welcome screen renders, Continue with email -> email-input + name-input flow detects new users correctly, request-otp call returns dev_otp via interceptor, all 6 OTP digit inputs (otp-0..otp-5) accept the code and auto-submit, navigation lands on Chats tab with chats-title, fab-new-chat, Calls/Settings tabs visible. Updated empty-state copy ('No conversations yet' — stale demo-user hint from iteration 2 has been removed). No page errors, no red screen.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/conversations/{id}/messages", "issue": "Read-receipt update is performed AFTER the messages list is returned to the requester, so the FIRST list response does not yet include the requester in read_by — only subsequent list calls do. UX still works (DB is updated, peer sees read_receipt via WS), but the initial response payload is one step behind. Tests adjusted to verify on second list."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {"component": "global", "issue": "Bundler still emits deprecation warnings: 'shadow*' style props deprecated (use boxShadow); expo-av deprecated in SDK 54 (migrate to expo-audio/expo-video). Non-blocking but should be tracked."}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vaanix_api.py",
+    "/app/backend/tests/test_vaanix_extended.py",
+    "/app/backend/tests/conftest.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: in GET /conversations/{id}/messages, mutate the in-memory msg dicts to add current user to read_by BEFORE returning so the first response is consistent with DB state.",
+    "Track expo-av and shadow* deprecations before next Expo SDK bump (no functional impact today).",
+    "(From iter-2, follow-up) Add testIDs to logout-confirm modal buttons (logout-confirm, logout-cancel) — not retested this iteration."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 818 lines — splitting into routers (auth/users/conversations/messages/ws) recommended.",
+    "OTP cooldown lookup stores expires_at as native datetime but created_at as ISO string — inconsistent. Fine today (cooldown is computed from string parse) but normalize for safety.",
+    "WebSocket has no per-message rate-limit / payload-size limit; large base64 image messages go through the same WS broadcast unmodified (could be heavy on big groups). Consider sending only message_id and letting clients fetch.",
+    "request-otp is_new_user flag is `email_verified is False` which is also true for an existing-but-never-verified user — currently unused on the client but semantics could mislead future consumers."
+  ],
+  "updated_files": [
+    "/app/backend/tests/conftest.py (now reads EXPO_PUBLIC_BACKEND_URL from frontend/.env when env var is missing — no more hardcoded host)",
+    "/app/backend/tests/test_vaanix_extended.py (NEW — 20 tests covering refresh, profile update, search, block/unblock, groups, admin enforcement, mute, image messages, pagination, read receipts, reactions, star, delete, message search, WebSocket presence/typing/ping-pong + invalid-token rejection)"
+  ],
+  "success_rate": {"backend": "100% (35/35 incl. 2 WS tests)", "frontend": "100% (welcome -> email -> name -> OTP auto-submit -> chats with empty state)"},
+  "seed_data_creation": "Each test run creates unique TEST_<scope>_<uuid>@vaanix.app users (cooldown is 60s/email so unique emails are mandatory). All prefixed TEST_ for safe identification.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Frontend env var: EXPO_PUBLIC_BACKEND_URL (currently https://app-migration-72.preview.emergentagent.com). Backend at $URL/api. DEV_RETURN_OTP=true returns dev_otp in /auth/request-otp response — capture via page.on('response') handler in Playwright. WS URL: wss://<host>/api/ws?token=<access>. To run all tests: `cd /app && python -m pytest backend/tests/ -v --junitxml=/app/test_reports/pytest/pytest_results.xml`. Requires `websockets` python package (now installed). OTP screen has data-testid otp-0..otp-5 (one per digit), otp-submit, otp-resend, dev-otp.",
+  "rca_of_issue": "No functional bugs found. Single observation: read-receipt update in list_messages applies AFTER the response is built — first list still shows old read_by for the requester; subsequent calls are correct. WS read_receipt broadcast does fire for peers, so UX is unaffected."
+}
