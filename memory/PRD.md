@@ -5,21 +5,23 @@ Vaanix is a real-time messaging mobile app built with Expo (React Native) + Fast
 
 ## Tech Stack
 - **Frontend:** Expo SDK 54, expo-router, react-native-reanimated, expo-linear-gradient, expo-image-picker, expo-document-picker, expo-av, expo-secure-store
-- **Backend:** FastAPI, Motor (async MongoDB), PyJWT, native FastAPI WebSockets, Resend (transactional email)
+- **Backend:** FastAPI, Motor (async MongoDB), PyJWT, native FastAPI WebSockets, **external OTP microservice** (Express + Resend) for email delivery and OTP verification
 - **Storage:** MongoDB. Media stored as base64 data URLs.
 
 ## Implemented (MVP)
 ### Auth — Passwordless Email + OTP
-- POST `/api/auth/request-otp` `{ email, display_name? }` — generates 6-digit code, sends via Resend, returns `dev_otp` in dev mode for fallback testing
-- POST `/api/auth/verify-otp` `{ email, otp }` — exchanges valid OTP for JWT (access 7d, refresh 30d). Marks user `email_verified=true`.
-- 5-minute OTP TTL, max 5 verify attempts, 60-second resend cooldown
+- POST `/api/auth/request-otp` `{ email, display_name? }` — proxies to external OTP service which generates a 6-digit code, stores it in-memory (5-min TTL), and emails via Resend. Display name is required on first signup.
+- POST `/api/auth/verify-otp` `{ email, otp }` — proxies to external OTP service for verification, then issues JWTs (access 7d, refresh 30d). Marks user `email_verified=true`.
+- POST `/api/auth/dev-login` `{ email, display_name? }` — **dev-only bypass**, returns 404 unless `DEV_LOGIN_ENABLED=true`. Used by automated tests.
 - JWT stored in `expo-secure-store` (mobile) / AsyncStorage (web)
 - Legacy password endpoints removed
 
-### Email Delivery
-- Provider: **Resend** (`onboarding@resend.dev` — test mode delivers only to the Resend account-verified email)
-- For all other emails, the OTP is returned in the API response and surfaced via a "DEV MODE" banner in the app
-- To enable production-grade delivery to any email: verify a domain at https://resend.com/domains and update `SENDER_EMAIL` in `/app/backend/.env`
+### External OTP Microservice
+- URL configured via `OTP_BACKEND_URL` env (default: `https://otp-backend-lpv2.onrender.com`)
+- Source: `https://github.com/arijitdas199/otp-backend.git`
+- Exposes `POST /api/auth/request-otp` and `POST /api/auth/verify-otp`
+- 5-minute OTP TTL maintained by the external service (in-memory Map)
+- Emails delivered via Resend (`FROM_EMAIL` configured on the external service)
 
 ### Messaging (unchanged)
 - 1-to-1 + group conversations (admin-controlled)
@@ -41,12 +43,15 @@ Vaanix is a real-time messaging mobile app built with Expo (React Native) + Fast
 - WebSocket auth via `?token=…` query param. Server broadcasts: `new_message`, `message_updated`, `message_deleted`, `typing`, `presence`, `read_receipt`.
 - IDs are UUID strings; all Mongo responses exclude `_id`.
 
-## Mocked / Deferred
-- **Resend**: real email integration is in place. In Resend test mode, delivery to non-verified recipients fails by design; the OTP is returned in the API response so the app remains testable. Verify a domain in Resend to enable production delivery to any address.
-- **Deferred:** voice/video calls, multi-device sync, message forwarding, end-to-end encryption, native FCM (requires EAS dev build).
+## Environment Variables (backend/.env)
+- `MONGO_URL`, `DB_NAME`
+- `JWT_SECRET`
+- `APP_NAME`
+- `OTP_BACKEND_URL` — external OTP microservice base URL
+- `DEV_LOGIN_ENABLED` — set to `true` to expose `/api/auth/dev-login` (off in production)
 
 ## Test Credentials
-See `/app/memory/test_credentials.md`. There are no static accounts — sign up with any email; OTP is delivered to your Resend-verified inbox or surfaced in the API/UI in dev mode.
+See `/app/memory/test_credentials.md`. Tests use the dev-login endpoint to bypass external OTP delivery.
 
 ## Smart Business Enhancement
 A **shareable invite deep-link** for new groups (`vaanix://invite/{conv_id}`) — every group becomes a referral surface. Tiny add-on top of existing conversation IDs.

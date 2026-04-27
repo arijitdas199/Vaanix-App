@@ -24,12 +24,14 @@ def _email(prefix: str = "EXT") -> str:
 
 
 def _login(email: str, name: str = "TEST"):
-    r = requests.post(f"{API}/auth/request-otp", json={"email": email, "display_name": name})
+    r = requests.post(
+        f"{API}/auth/dev-login",
+        json={"email": email, "display_name": name},
+    )
     assert r.status_code == 200, r.text
-    otp = r.json()["dev_otp"]
-    v = requests.post(f"{API}/auth/verify-otp", json={"email": email, "otp": otp})
-    assert v.status_code == 200, v.text
-    d = v.json()
+    d = r.json()
+    # dev-login does not issue a refresh-token-as-bearer the same way verify-otp
+    # does, but the refresh_token is still in the response payload for parity.
     return d["access_token"], d["refresh_token"], d["user"]
 
 

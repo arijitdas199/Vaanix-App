@@ -7,12 +7,10 @@ load_dotenv(ROOT_DIR / ".env")
 import os
 import uuid
 import json
-import random
 import asyncio
 import logging
-import secrets
+import httpx
 import jwt
-import resend
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any, Set
 
@@ -37,19 +35,14 @@ from motor.motor_asyncio import AsyncIOMotorClient
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_MIN = 60 * 24 * 7  # 7 days for mobile convenience
 REFRESH_TOKEN_DAYS = 30
-OTP_TTL_MIN = 5
-OTP_MAX_ATTEMPTS = 5
-OTP_RESEND_COOLDOWN_SEC = 60
 
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ["DB_NAME"]]
 
-# Resend
-resend.api_key = os.environ.get("RESEND_API_KEY", "")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
+# External OTP microservice (handles email send + OTP verify + 5-min TTL)
+OTP_BACKEND_URL = os.environ.get("OTP_BACKEND_URL", "https://otp-backend-lpv2.onrender.com").rstrip("/")
 APP_NAME = os.environ.get("APP_NAME", "Vaanix")
-DEV_RETURN_OTP = os.environ.get("DEV_RETURN_OTP", "false").lower() in ("true", "1", "yes")
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("vaanix")
@@ -70,51 +63,48 @@ def now_iso() -> str:
 
 
 def gen_otp() -> str:
-    return f"{random.randint(0, 999999):06d}"
+    # OTP generation is delegated to the external OTP service.
+    return ""
 
 
-def _otp_email_html(otp: str) -> str:
-    return f"""
-    <html><body style="margin:0;padding:0;background:#0A0B10;font-family:Arial,sans-serif;">
-      <table width="100%" cellpadding="0" cellspacing="0" style="background:#0A0B10;padding:40px 20px;">
-        <tr><td align="center">
-          <table width="480" cellpadding="0" cellspacing="0" style="background:#12141D;border-radius:18px;padding:36px;border:1px solid #272A37;">
-            <tr><td align="center" style="padding-bottom:24px;">
-              <table cellpadding="0" cellspacing="0"><tr>
-                <td style="background:linear-gradient(135deg,#6366F1,#A78BFA);width:48px;height:48px;border-radius:14px;text-align:center;color:#fff;font-size:22px;font-weight:bold;line-height:48px;">V</td>
-                <td style="padding-left:12px;color:#F8FAFC;font-size:24px;font-weight:bold;">{APP_NAME}</td>
-              </tr></table>
-            </td></tr>
-            <tr><td align="center" style="color:#F8FAFC;font-size:22px;font-weight:600;padding-bottom:12px;">Your sign-in code</td></tr>
-            <tr><td align="center" style="color:#94A3B8;font-size:14px;line-height:22px;padding-bottom:24px;">Use the code below to continue. It expires in {OTP_TTL_MIN} minutes.</td></tr>
-            <tr><td align="center" style="padding-bottom:28px;">
-              <div style="display:inline-block;background:#1E202B;border:1px solid #272A37;border-radius:14px;padding:18px 28px;color:#F8FAFC;font-size:34px;letter-spacing:10px;font-weight:700;">{otp}</div>
-            </td></tr>
-            <tr><td align="center" style="color:#64748B;font-size:12px;line-height:18px;">If you didn't request this code, just ignore this email. Someone may have entered your email by mistake.</td></tr>
-            <tr><td align="center" style="padding-top:28px;color:#475569;font-size:11px;">Connect Beyond Words — {APP_NAME}</td></tr>
-          </table>
-        </td></tr>
-      </table>
-    </body></html>
+async def send_otp_via_external_service(email: str) -> tuple[bool, Optional[str]]:
+    """Calls the external OTP backend to generate + email an OTP.
+
+    Returns (ok, error_message). The external service stores the code in-memory
+    with a 5-minute TTL and verifies via /api/auth/verify-otp.
     """
-
-
-async def send_otp_email(to_email: str, otp: str) -> Optional[str]:
-    if not resend.api_key:
-        logger.warning("RESEND_API_KEY not set — skipping email send.")
-        return None
-    params = {
-        "from": SENDER_EMAIL,
-        "to": [to_email],
-        "subject": f"{APP_NAME} sign-in code: {otp}",
-        "html": _otp_email_html(otp),
-    }
+    url = f"{OTP_BACKEND_URL}/api/auth/request-otp"
     try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        return result.get("id") if isinstance(result, dict) else None
+        async with httpx.AsyncClient(timeout=30.0) as cli:
+            r = await cli.post(url, json={"email": email})
+        if r.status_code == 200:
+            return True, None
+        try:
+            err = r.json().get("error") or r.text
+        except Exception:
+            err = r.text
+        logger.error(f"OTP service request-otp failed [{r.status_code}] for {email}: {err}")
+        return False, err
     except Exception as e:
-        logger.error(f"Resend send failed for {to_email}: {e}")
-        return None
+        logger.error(f"OTP service request-otp error for {email}: {e}")
+        return False, "Email service unavailable. Please try again."
+
+
+async def verify_otp_via_external_service(email: str, otp: str) -> tuple[bool, Optional[str]]:
+    url = f"{OTP_BACKEND_URL}/api/auth/verify-otp"
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as cli:
+            r = await cli.post(url, json={"email": email, "otp": otp})
+        if r.status_code == 200:
+            return True, None
+        try:
+            err = r.json().get("error") or r.text
+        except Exception:
+            err = r.text
+        return False, err or "Verification failed"
+    except Exception as e:
+        logger.error(f"OTP service verify-otp error for {email}: {e}")
+        return False, "Verification service unavailable. Please try again."
 
 
 def get_jwt_secret() -> str:
@@ -255,74 +245,83 @@ async def request_otp(body: RequestOTPIn):
         }
         await db.users.insert_one(user)
 
-    # Cooldown: only one OTP per minute per email
-    last = await db.otp_codes.find_one({"email": email}, sort=[("created_at", -1)])
-    if last:
-        last_at = datetime.fromisoformat(last["created_at"])
-        if (now_utc() - last_at).total_seconds() < OTP_RESEND_COOLDOWN_SEC:
-            wait = OTP_RESEND_COOLDOWN_SEC - int((now_utc() - last_at).total_seconds())
-            raise HTTPException(429, f"Please wait {wait}s before requesting a new code")
+    ok, err = await send_otp_via_external_service(email)
+    if not ok:
+        raise HTTPException(502, err or "Could not send verification code. Please try again.")
 
-    # Invalidate any prior unused codes
-    await db.otp_codes.delete_many({"email": email})
+    logger.info(f"[OTP] external service dispatched code to {email}")
 
-    otp = gen_otp()
-    expires_at = now_utc() + timedelta(minutes=OTP_TTL_MIN)
-    await db.otp_codes.insert_one({
-        "email": email,
-        "otp": otp,
-        "attempts": 0,
-        "used": False,
-        "expires_at": expires_at,
-        "created_at": now_iso(),
-    })
-
-    email_id = await send_otp_email(email, otp)
-    logger.info(f"[OTP] {email} -> {otp} (resend_id={email_id})")
-
-    payload: Dict[str, Any] = {
+    return {
         "ok": True,
         "message": "Verification code sent to your email.",
-        "expires_in": OTP_TTL_MIN * 60,
+        "expires_in": 5 * 60,  # external service uses 5-minute TTL
         "is_new_user": user.get("email_verified") is False,
-        "email_sent": bool(email_id),
+        "email_sent": True,
     }
-    if DEV_RETURN_OTP:
-        payload["dev_otp"] = otp
-    return payload
 
 
 @api.post("/auth/verify-otp")
 async def verify_otp(body: VerifyOTPIn, response: Response):
     email = body.email.lower().strip()
-    rec = await db.otp_codes.find_one({"email": email, "used": False}, sort=[("created_at", -1)])
-    if not rec:
-        raise HTTPException(400, "No active code. Please request a new one.")
-
-    expires_at = rec["expires_at"]
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    if expires_at < now_utc():
-        await db.otp_codes.delete_one({"_id": rec["_id"]})
-        raise HTTPException(400, "Code expired. Please request a new one.")
-
-    if rec.get("attempts", 0) >= OTP_MAX_ATTEMPTS:
-        await db.otp_codes.delete_one({"_id": rec["_id"]})
-        raise HTTPException(429, "Too many incorrect attempts. Please request a new code.")
-
-    if rec["otp"] != body.otp.strip():
-        await db.otp_codes.update_one({"_id": rec["_id"]}, {"$inc": {"attempts": 1}})
-        remaining = OTP_MAX_ATTEMPTS - (rec.get("attempts", 0) + 1)
-        raise HTTPException(401, f"Incorrect code. {max(remaining, 0)} attempts left.")
-
-    await db.otp_codes.update_one({"_id": rec["_id"]}, {"$set": {"used": True}})
-    await db.users.update_one({"email": email}, {"$set": {"email_verified": True}})
 
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(404, "User not found. Please request a new code.")
+
+    ok, err = await verify_otp_via_external_service(email, body.otp.strip())
+    if not ok:
+        msg = (err or "").strip()
+        if msg.lower() in ("invalid otp",):
+            raise HTTPException(401, "Incorrect code. Please try again.")
+        if msg.lower() == "expired":
+            raise HTTPException(400, "Code expired. Please request a new one.")
+        if msg.lower() == "no otp":
+            raise HTTPException(400, "No active code. Please request a new one.")
+        raise HTTPException(401, msg or "Verification failed.")
+
+    await db.users.update_one({"email": email}, {"$set": {"email_verified": True}})
+    user["email_verified"] = True
+
+    access = create_access_token(user["id"], email)
+    refresh = create_refresh_token(user["id"])
+    set_auth_cookies(response, access, refresh)
+    return {"user": public_user(user), "access_token": access, "refresh_token": refresh}
+
+
+@api.post("/auth/dev-login")
+async def dev_login(body: RequestOTPIn, response: Response):
+    """Dev-only bypass for OTP. Issues a JWT without calling the external service.
+    Enabled when env var DEV_LOGIN_ENABLED=true. Used by automated tests so the
+    suite does not depend on real email delivery via the external OTP service.
+    """
+    if os.environ.get("DEV_LOGIN_ENABLED", "false").lower() not in ("true", "1", "yes"):
+        raise HTTPException(404, "Not found")
+
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user:
+        if not body.display_name or not body.display_name.strip():
+            raise HTTPException(400, "display_name is required for new users")
+        user = {
+            "id": str(uuid.uuid4()),
+            "email": email,
+            "display_name": body.display_name.strip(),
+            "avatar": None,
+            "bio": "",
+            "status": "Hey there! I'm using Vaanix.",
+            "online": False,
+            "last_seen": now_iso(),
+            "email_verified": True,
+            "blocked_users": [],
+            "starred_messages": [],
+            "muted_conversations": [],
+            "role": "user",
+            "created_at": now_iso(),
+        }
+        await db.users.insert_one(user.copy())
+    else:
+        await db.users.update_one({"email": email}, {"$set": {"email_verified": True}})
+        user["email_verified"] = True
 
     access = create_access_token(user["id"], email)
     refresh = create_refresh_token(user["id"])

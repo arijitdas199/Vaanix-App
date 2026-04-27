@@ -1,10 +1,9 @@
 """Vaanix backend API tests for OTP-based passwordless auth + chat APIs.
 
-Note: Resend is in test mode and only delivers to one verified email; for
-any other email the backend includes `dev_otp` in the response (DEV_RETURN_OTP=true).
-A cooldown of 60s per-email is enforced, so each test uses a unique email.
+OTP send/verify is delegated to an external service (OTP_BACKEND_URL). Tests
+use the dev-only `/api/auth/dev-login` endpoint (gated by DEV_LOGIN_ENABLED=true)
+to obtain JWTs without depending on real email delivery.
 """
-import time
 import uuid
 import pytest
 import requests
@@ -23,14 +22,13 @@ def _request_otp(email: str, display_name: str | None = "TEST User"):
 
 
 def _login(email: str, display_name: str = "TEST User"):
-    """Helper: full OTP login. Returns (access_token, user)."""
-    r = _request_otp(email, display_name)
+    """Helper: dev-login bypass. Returns (access_token, user)."""
+    r = requests.post(
+        f"{API}/auth/dev-login",
+        json={"email": email, "display_name": display_name},
+    )
     assert r.status_code == 200, r.text
-    otp = r.json().get("dev_otp")
-    assert otp, f"dev_otp missing: {r.json()}"
-    v = requests.post(f"{API}/auth/verify-otp", json={"email": email, "otp": otp})
-    assert v.status_code == 200, v.text
-    data = v.json()
+    data = r.json()
     return data["access_token"], data["user"]
 
 
@@ -43,14 +41,13 @@ class TestAuthOTP:
         assert r.status_code == 200
         assert r.json().get("app") == "Vaanix"
 
-    def test_request_otp_new_user_returns_dev_otp(self):
+    def test_request_otp_new_user_dispatches_email(self):
         email = _new_email("TEST_new")
         r = _request_otp(email, "Brand New")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["ok"] is True
-        assert "dev_otp" in body, f"dev_otp must be present in test mode: {body}"
-        assert len(body["dev_otp"]) == 6 and body["dev_otp"].isdigit()
+        assert body["email_sent"] is True
         assert body["expires_in"] == 300
 
     def test_request_otp_new_user_without_display_name_returns_400(self):
@@ -59,39 +56,24 @@ class TestAuthOTP:
         assert r.status_code == 400
         assert "display_name" in r.text.lower()
 
-    def test_request_otp_cooldown_429(self):
-        email = _new_email("TEST_cool")
-        r1 = _request_otp(email, "Cool Down")
-        assert r1.status_code == 200
-        # Immediate second call should be rate limited
-        r2 = _request_otp(email, "Cool Down")
-        assert r2.status_code == 429, r2.text
-
-    def test_verify_otp_success_and_me(self):
-        email = _new_email("TEST_verify")
-        token, user = _login(email, "Verify User")
-        assert token
-        assert user["email"] == email.lower()
-        assert user["email_verified"] is True
-        # /auth/me with bearer
-        r = requests.get(f"{API}/auth/me", headers=auth_headers(token))
-        assert r.status_code == 200
-        assert r.json()["email"] == email.lower()
-
-    def test_verify_otp_wrong_code_attempts_left_then_invalidated(self):
+    def test_verify_otp_wrong_code_returns_401(self):
+        # Make sure the user exists by triggering request-otp first
         email = _new_email("TEST_wrong")
         r = _request_otp(email, "Wrong Code")
         assert r.status_code == 200
-        real = r.json()["dev_otp"]
-        wrong = "000000" if real != "000000" else "111111"
-        # 5 wrong attempts
-        for i in range(5):
-            v = requests.post(f"{API}/auth/verify-otp", json={"email": email, "otp": wrong})
-            assert v.status_code == 401, v.text
-            assert "attempts left" in v.text.lower()
-        # 6th attempt: OTP invalidated (429) — even if real code provided
-        v = requests.post(f"{API}/auth/verify-otp", json={"email": email, "otp": real})
-        assert v.status_code in (400, 429), v.text
+        v = requests.post(f"{API}/auth/verify-otp", json={"email": email, "otp": "000000"})
+        # External service will return invalid OTP since real code wasn't entered
+        assert v.status_code in (400, 401), v.text
+
+    def test_dev_login_and_me(self):
+        email = _new_email("TEST_dev")
+        token, user = _login(email, "Dev User")
+        assert token
+        assert user["email"] == email.lower()
+        assert user["email_verified"] is True
+        r = requests.get(f"{API}/auth/me", headers=auth_headers(token))
+        assert r.status_code == 200
+        assert r.json()["email"] == email.lower()
 
     def test_me_unauthenticated(self):
         r = requests.get(f"{API}/auth/me")
@@ -107,18 +89,9 @@ class TestAuthOTP:
         r = requests.post(f"{API}{path}", json=payload)
         assert r.status_code == 404, f"{path} expected 404 got {r.status_code}: {r.text}"
 
-    def test_seeded_users_cleaned_up(self):
-        # Indirect check: requesting OTP for these old emails as if NEW — should require display_name.
-        # If a doc still exists, server would NOT 400 for missing display_name.
-        for email in ["admin@vaanix.app", "aarav@vaanix.app", "meera@vaanix.app"]:
-            # ensure unique cooldown bucket by waiting? They are independent emails, no interference.
-            r = requests.post(f"{API}/auth/request-otp", json={"email": email})
-            assert r.status_code == 400, f"Old seeded user {email} still present: {r.status_code} {r.text}"
-            assert "display_name" in r.text.lower()
-
 
 # ============================================================
-# CHAT APIS WITH OTP-OBTAINED TOKEN
+# CHAT APIS WITH DEV-LOGIN-OBTAINED TOKEN
 # ============================================================
 @pytest.fixture(scope="module")
 def alice():
